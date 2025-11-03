@@ -189,22 +189,35 @@ graph TD
 
 ```mermaid
 graph TD
-    A[Shodan API] --> B(DMZ: shodan.py);
-    B --> C[DMZ DB - ShodanAssets, ShodanVulns];
-    D(LZ: shodan_sync.py) --> E{DMZ API: /dmz_sync/shodan_sync};
-    E --> C;
-    D --> F[LZ MDL - ShodanAssets, ShodanVulns];
+    subgraph Scan Initiation
+        G(LZ API: /scans) --> H(LZ: scan.py);
+        H --> I(LZ: scanExecution.py);
+    end
+    subgraph Data Ingestion
+        A[Shodan API] --> B(DMZ: shodan.py);
+        B --> C[DMZ DB - ShodanAssets, ShodanVulns];
+    end
+    subgraph LZ Synchronization
+        D(LZ: shodan_sync.py) --> E{DMZ API: /dmz_sync/shodan_sync};
+        E --> C;
+        D --> F[LZ MDL - ShodanAssets, ShodanVulns];
+    end
+    I --> B;
 ```
 
 ### Data Flow Breakdown
 
-1.  **DMZ Ingestion**: `backend/src/xfd_django/xfd_api/tasks/shodan.py`
+1.  **Scan Initiation**
+    *   `backend/src/xfd_django/xfd_api/api_methods/scan.py`: This script exposes API endpoints for managing scans. When a Shodan scan is initiated through the API, it triggers the scan execution process.
+    *   `backend/src/xfd_django/xfd_api/tasks/scanExecution.py`: This script is responsible for executing scans. It starts the required tasks on AWS ECS or a local Docker environment, depending on the configuration. For Shodan scans, it passes the necessary API keys and other parameters to the ingestion script.
+
+2.  **DMZ Ingestion**: `backend/src/xfd_django/xfd_api/tasks/shodan.py`
     *   This script runs in the DMZ environment.
     *   `handler(command_options)` (L20): Orchestrates the data ingestion process.
         *   Pulls host information from the Shodan API.
         *   Saves the data to the `ShodanAssets` and `ShodanVulns` models in the DMZ database.
 
-2.  **LZ Synchronization**: `backend/src/xfd_django/xfd_api/tasks/shodan_sync.py`
+3.  **LZ Synchronization**: `backend/src/xfd_django/xfd_api/tasks/shodan_sync.py`
     *   This script runs in the LZ environment.
     *   `handler(command_options)` (L40): Orchestrates the synchronization process.
         *   Fetches Shodan data from the DMZ API.
